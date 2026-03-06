@@ -1,4 +1,4 @@
-const { connectToDatabase } = require('../lib/mongodb');
+const { connectToDatabase } = require('../api/mongodb');
 
 function generateKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -87,3 +87,4 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 };
+
