@@ -1,4 +1,6 @@
-const { connectToDatabase } = require('../api/mongodb');
+// api/genkey.js - Vercel Serverless Function untuk generate Nebula Key
+
+const { connectToDatabase } = require('../lib/mongodb');
 
 function generateKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -26,48 +28,53 @@ function calculateExpiry(duration) {
   return now;
 }
 
+// Handler utama (wajib diexport seperti ini agar Vercel mendeteksi)
 module.exports = async function handler(req, res) {
-  // ── CORS ──────────────────────────────────────────────────────────────────
+  // ── CORS (biar bisa diakses dari Roblox atau browser) ────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'GET') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const authHeader = req.headers['authorization'] || '';
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method not allowed (hanya GET)' });
+  }
+
+  // ── Autentikasi token admin ────────────────────────────────────────────────────────
+  const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
   if (!token || token !== process.env.ADMIN_TOKEN) {
-    return res.status(401).json({ success: false, error: 'Unauthorized: invalid or missing token' });
+    return res.status(401).json({ success: false, error: 'Unauthorized: token salah atau hilang' });
   }
 
-  // ── Params ────────────────────────────────────────────────────────────────
+  // ── Ambil parameter duration ───────────────────────────────────────────────────────
   const { duration = '1day' } = req.query;
   const expiry = calculateExpiry(duration);
 
   if (expiry === undefined) {
     return res.status(400).json({
       success: false,
-      error: 'Bad Request: duration must be one of 1day, 7days, 30days, 90days, permanent',
+      error: 'Bad Request: duration harus salah satu dari: 1day, 7days, 30days, 90days, permanent'
     });
   }
 
-  // ── DB ────────────────────────────────────────────────────────────────────
+  // ── Koneksi ke MongoDB & simpan key ────────────────────────────────────────────────
   try {
     const { db } = await connectToDatabase();
     const collection = db.collection('keys');
 
     const key = generateKey();
+
     const doc = {
       key,
       duration,
       expiry,
       createdAt: new Date(),
-      used: false,
+      used: false
     };
 
     await collection.insertOne(doc);
@@ -77,14 +84,13 @@ module.exports = async function handler(req, res) {
       data: {
         key: doc.key,
         duration: doc.duration,
-        expiry: doc.expiry,
-        createdAt: doc.createdAt,
-        used: doc.used,
-      },
+        expiry: doc.expiry ? doc.expiry.toISOString() : null,
+        createdAt: doc.createdAt.toISOString(),
+        used: doc.used
+      }
     });
   } catch (err) {
-    console.error('[genkey] DB error:', err);
-    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+    console.error('[genkey] Error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error - cek Vercel logs' });
   }
 };
-
