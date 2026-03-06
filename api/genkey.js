@@ -1,48 +1,89 @@
-import { MongoClient } from 'mongodb';
+const { connectToDatabase } = require('../lib/mongodb');
 
-const uri = process.env.MONGO_URI;
-const adminToken = process.env.ADMIN_TOKEN;
+function generateKey() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let random = '';
+  for (let i = 0; i < 6; i++) {
+    random += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  const timestamp = Date.now().toString(36).toUpperCase();
+  return `NEB-${random}-${timestamp}`;
+}
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+function calculateExpiry(duration) {
+  if (duration === 'permanent') return null;
 
-  const auth = req.headers.authorization;
-  if (!auth || auth !== `Bearer ${adminToken}`) {
-    return res.status(401).json({ error: 'Unauthorized - Invalid token' });
+  const now = new Date();
+  const units = {
+    '1day':   1,
+    '7days':  7,
+    '30days': 30,
+    '90days': 90,
+  };
+
+  if (!units[duration]) return undefined; // invalid
+  now.setDate(now.getDate() + units[duration]);
+  return now;
+}
+
+module.exports = async function handler(req, res) {
+  // ── CORS ──────────────────────────────────────────────────────────────────
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const { duration } = req.query;
-  if (!duration) return res.status(400).json({ error: 'Missing duration parameter' });
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
-  const client = new MongoClient(uri);
+  if (!token || token !== process.env.ADMIN_TOKEN) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: invalid or missing token' });
+  }
+
+  // ── Params ────────────────────────────────────────────────────────────────
+  const { duration = '1day' } = req.query;
+  const expiry = calculateExpiry(duration);
+
+  if (expiry === undefined) {
+    return res.status(400).json({
+      success: false,
+      error: 'Bad Request: duration must be one of 1day, 7days, 30days, 90days, permanent',
+    });
+  }
+
+  // ── DB ────────────────────────────────────────────────────────────────────
   try {
-    await client.connect();
-    const db = client.db('nebula_db'); // ganti nama DB
-    const keys = db.collection('keys');
+    const { db } = await connectToDatabase();
+    const collection = db.collection('keys');
 
-    const key = `NEB-${Math.random().toString(36).slice(2, 10).toUpperCase()}-${Date.now().toString(36)}`;
-
-    const expiry = duration === 'permanent' ? null : new Date(Date.now() + parseDuration(duration));
-
-    await keys.insertOne({
+    const key = generateKey();
+    const doc = {
       key,
       duration,
-      createdAt: new Date(),
       expiry,
-      used: false
+      createdAt: new Date(),
+      used: false,
+    };
+
+    await collection.insertOne(doc);
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        key: doc.key,
+        duration: doc.duration,
+        expiry: doc.expiry,
+        createdAt: doc.createdAt,
+        used: doc.used,
+      },
     });
-
-    res.status(200).json({ key });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  } finally {
-    await client.close();
+    console.error('[genkey] DB error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
-}
-
-function parseDuration(dur) {
-  if (dur === '1day') return 24 * 60 * 60 * 1000;
-  // tambah case lain
-  return 0;
-}
+};
