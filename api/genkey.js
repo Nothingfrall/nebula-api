@@ -1,7 +1,8 @@
-// api/genkey.js - Vercel Serverless Function untuk generate Nebula Key
+// api/genkey.js - Nebula Key Generator API (Vercel Serverless)
 
 const { connectToDatabase } = require('../lib/mongodb');
 
+// Fungsi generate key unik
 function generateKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let random = '';
@@ -12,13 +13,14 @@ function generateKey() {
   return `NEB-${random}-${timestamp}`;
 }
 
+// Hitung expiry berdasarkan duration
 function calculateExpiry(duration) {
   if (duration === 'permanent') return null;
 
   const now = new Date();
   const units = {
-    '1day':   1,
-    '7days':  7,
+    '1day': 1,
+    '7days': 7,
     '30days': 30,
     '90days': 90,
   };
@@ -28,9 +30,9 @@ function calculateExpiry(duration) {
   return now;
 }
 
-// Handler utama (wajib diexport seperti ini agar Vercel mendeteksi)
+// Handler utama - WAJIB diexport seperti ini agar Vercel mendeteksi sebagai API route
 module.exports = async function handler(req, res) {
-  // ── CORS (biar bisa diakses dari Roblox atau browser) ────────────────────────────────
+  // CORS header (penting biar bisa dipanggil dari Roblox atau browser lain)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -40,29 +42,28 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method !== 'GET') {
-    return res.status(405).json({ success: false, error: 'Method not allowed (hanya GET)' });
+    return res.status(405).json({ success: false, error: 'Method not allowed - gunakan GET' });
   }
 
-  // ── Autentikasi token admin ────────────────────────────────────────────────────────
+  // Cek token admin dari env vars
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
   if (!token || token !== process.env.ADMIN_TOKEN) {
-    return res.status(401).json({ success: false, error: 'Unauthorized: token salah atau hilang' });
+    return res.status(401).json({ success: false, error: 'Unauthorized - token salah atau hilang' });
   }
 
-  // ── Ambil parameter duration ───────────────────────────────────────────────────────
+  // Ambil duration dari query (?duration=1day)
   const { duration = '1day' } = req.query;
   const expiry = calculateExpiry(duration);
 
   if (expiry === undefined) {
     return res.status(400).json({
       success: false,
-      error: 'Bad Request: duration harus salah satu dari: 1day, 7days, 30days, 90days, permanent'
+      error: 'Bad Request - duration harus 1day, 7days, 30days, 90days, atau permanent'
     });
   }
 
-  // ── Koneksi ke MongoDB & simpan key ────────────────────────────────────────────────
   try {
     const { db } = await connectToDatabase();
     const collection = db.collection('keys');
@@ -79,7 +80,8 @@ module.exports = async function handler(req, res) {
 
     await collection.insertOne(doc);
 
-    return res.status(201).json({
+    // Response sukses
+    res.status(201).json({
       success: true,
       data: {
         key: doc.key,
@@ -90,7 +92,7 @@ module.exports = async function handler(req, res) {
       }
     });
   } catch (err) {
-    console.error('[genkey] Error:', err);
-    return res.status(500).json({ success: false, error: 'Internal Server Error - cek Vercel logs' });
+    console.error('Error generate key:', err.message);
+    res.status(500).json({ success: false, error: 'Server error - cek Vercel logs untuk detail' });
   }
 };
