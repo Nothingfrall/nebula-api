@@ -1,7 +1,15 @@
 {
   "name": "nebula-api",
   "version": "1.0.0",
+  "private": true,
+  "description": "Serverless API for generating premium keys — powered by Vercel + MongoDB",
+  "scripts": {
+    "dev": "vercel dev"
+  },
   "dependencies": {
-    "mongodb": "^6.0.0"
+    "mongodb": "^6.8.0"
+  },
+  "engines": {
+    "node": ">=18.x"
   }
 }
