@@ -1,4 +1,5 @@
 // api/genkey.js - Nebula Key Generator API (Vercel Serverless)
+// Pakai export default agar Vercel deteksi handler dengan benar
 
 const { connectToDatabase } = require('../lib/mongodb');
 
@@ -30,9 +31,11 @@ function calculateExpiry(duration) {
   return now;
 }
 
-// Handler utama - WAJIB diexport seperti ini agar Vercel mendeteksi sebagai API route
-module.exports = async function handler(req, res) {
-  // CORS header (penting biar bisa dipanggil dari Roblox atau browser lain)
+// Handler utama - WAJIB pakai export default untuk Vercel Node runtime
+export default async function handler(req, res) {
+  console.log('Genkey function invoked'); // Debug log biar kelihatan di Vercel logs
+
+  // CORS header
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -53,7 +56,7 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ success: false, error: 'Unauthorized - token salah atau hilang' });
   }
 
-  // Ambil duration dari query (?duration=1day)
+  // Ambil duration dari query
   const { duration = '1day' } = req.query;
   const expiry = calculateExpiry(duration);
 
@@ -80,7 +83,6 @@ module.exports = async function handler(req, res) {
 
     await collection.insertOne(doc);
 
-    // Response sukses
     res.status(201).json({
       success: true,
       data: {
@@ -93,6 +95,6 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     console.error('Error generate key:', err.message);
-    res.status(500).json({ success: false, error: 'Server error - cek Vercel logs untuk detail' });
+    res.status(500).json({ success: false, error: 'Server error - cek Vercel logs' });
   }
-};
+}
